@@ -1,0 +1,38 @@
+name: Deploy Dataflow Flex Template
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'dataflow/**'  # Solo se activa si cambia la carpeta dataflow
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout del código
+      uses: actions/checkout@v4
+
+    # Autenticación con Google Cloud usando OIDC (Recomendado) o llaves SA
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }} # Guarda tu llave SA en los Secrets de GitHub
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configurar Docker para Artifact Registry
+      run: |
+        gcloud auth configure-docker us-central1-docker.pkg.dev
+
+    - name: Build and Build Flex Template
+      run: |
+        gcloud dataflow flex-template build gs://mi-bucket-dataflow-templates/templates/mi-pipeline.json \
+          --image-gcr-path "us-central1-docker.pkg.dev/TU_PROYECTO_GCP/dataflow-templates/mi-pipeline-image:latest" \
+          --sdk-language "PYTHON" \
+          --flex-template-base-image "PYTHON3" \
+          --metadata-file-path "dataflow/metadata.json" \
+          --dataflow-kms-key ""
+        # Nota: Reemplaza TU_PROYECTO_GCP y las regiones/buckets por los tuyos reales.
