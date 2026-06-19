@@ -24,50 +24,42 @@ def run(argv=None):
         help='Ruta de salida Quarantine en GCS (ej. gs://dkft_bronze/quarantine/)')
     
     known_args, pipeline_args = parser.parse_known_args(argv)
-
     options = PipelineOptions(pipeline_args)
 
     with beam.Pipeline(options=options) as p:
-        # Leer archivos y obtener tuplas (nombre_archivo, contenido_lineas)
+        # 1. Leer metadatos y contenido de los archivos en landing
         files = (
             p 
-            | 'ReadFiles' >> fileio.MatchFiles(known_args.input_path)
-            | 'ReadMatches' >> fileio.ReadMatches()
-            | 'ExtractContent' >> beam.Map(lambda file_metadata: (file_metadata.metadata.path, file_metadata.read_utf8()))
+            | 'BuscarArchivos' >> fileio.MatchFiles(known_args.input_path)
+            | 'LeerMatches' >> fileio.ReadMatches()
+            | 'ExtraerContenido' >> beam.Map(lambda file_metadata: (file_metadata.metadata.path, file_metadata.read_utf8()))
         )
 
-        # Filtrar archivos .csv
+        # 2. Filtrar archivos .csv (Evaluando el índice [0] que es la ruta)
         csv_files = (
             files
-            | 'FilterCSV' >> beam.Filter(lambda file_tuple: file_tuple[0].endswith('.csv'))
+            | 'FiltrarCSV' >> beam.Filter(lambda file_tuple: file_tuple[0].lower().endswith('.csv'))
+            | 'ObtenerTextoCSV' >> beam.Map(lambda file_tuple: file_tuple[1])
         )
 
-        # Filtrar archivos que no son .csv
+        # 3. Filtrar archivos que NO son .csv
         non_csv_files = (
             files
-            | 'FilterNonCSV' >> beam.Filter(lambda file_tuple: not file_tuple[0].endswith('.csv'))
+            | 'FiltrarNoCSV' >> beam.Filter(lambda file_tuple: not file_tuple[0].lower().endswith('.csv'))
+            | 'ObtenerTextoNoCSV' >> beam.Map(lambda file_tuple: file_tuple[1])
         )
 
-        # Escribir en Raw
-        def write_to_raw(file_tuple):
-            path, content = file_tuple
-            filename = os.path.basename(path)
-            return beam.io.filesystems.FileSystems.create(os.path.join(known_args.output_raw, filename))
-
-        # Escribir en Quarantine
-        def write_to_quarantine(file_tuple):
-            path, content = file_tuple
-            filename = os.path.basename(path)
-            return beam.io.filesystems.FileSystems.create(os.path.join(known_args.output_quarantine, filename))
-
-        # Escribir el contenido (puedes ajustar el WriteToText a tus necesidades)
-        csv_files | 'WriteRaw' >> beam.io.WriteToText(
-            known_args.output_raw, 
-            file_name_suffix='.txt'
+        # 4. Escribir los resultados en sus respectivos destinos
+        csv_files | 'EscribirEnRaw' >> beam.io.WriteToText(
+            os.path.join(known_args.output_raw, 'datos'),
+            file_name_suffix='.csv',
+            shard_name_template=''  # Evita que se fragmente en múltiples archivos pequeños si es batch
         )
-        non_csv_files | 'WriteQuarantine' >> beam.io.WriteToText(
-            known_args.output_quarantine, 
-            file_name_suffix='.txt'
+
+        non_csv_files | 'EscribirEnQuarantine' >> beam.io.WriteToText(
+            os.path.join(known_args.output_quarantine, 'archivo'),
+            file_name_suffix='.txt',
+            shard_name_template=''
         )
 
 if __name__ == '__main__':
