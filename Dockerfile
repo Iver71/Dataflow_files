@@ -1,4 +1,4 @@
-FROM apache/beam_python3.10_sdk:2.54.0
+FROM gcr.io/dataflow-templates-base/python310-template-launcher-base:latest
 
 # Copiar pipeline
 COPY pipeline.py /app/pipeline.py
