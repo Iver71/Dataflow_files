@@ -1,11 +1,9 @@
 import argparse
 import logging
 import os
-import posixpath
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.io import fileio
-
 
 class RouteGCSFilesFn(beam.DoFn):
     def __init__(self, raw_path, quarantine_path):
@@ -13,7 +11,9 @@ class RouteGCSFilesFn(beam.DoFn):
         self.quarantine_path = quarantine_path
 
     def process(self, file_metadata):
+        # 💡 IMPORTANTE: Mover los imports aquí adentro para que los workers los reconozcan
         import apache_beam.io.gcp.gcsio as gcsio
+        import posixpath
 
         gcs = gcsio.GcsIO()
 
@@ -30,7 +30,7 @@ class RouteGCSFilesFn(beam.DoFn):
         else:
             target_directory = self.quarantine_path
 
-        # ✅ IMPORTANTE: usar posixpath (NO os.path.join)
+        # Usar posixpath de forma segura dentro del worker
         target_path = posixpath.join(target_directory, filename)
 
         logging.info(f"Procesando {gcs_path} -> {target_path}")
@@ -49,10 +49,8 @@ class RouteGCSFilesFn(beam.DoFn):
         except Exception as e:
             logging.error(f"Error procesando {filename}: {str(e)}")
 
-
 def run(argv=None):
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--input_path", required=True)
     parser.add_argument("--output_raw", required=True)
     parser.add_argument("--output_quarantine", required=True)
@@ -61,7 +59,6 @@ def run(argv=None):
     pipeline_options = PipelineOptions(pipeline_args)
 
     with beam.Pipeline(options=pipeline_options) as p:
-
         (
             p
             | "Match Files" >> fileio.MatchFiles(known_args.input_path)
@@ -73,7 +70,6 @@ def run(argv=None):
                 )
             )
         )
-
 
 if __name__ == "__main__":
     logging.getLogger().setLevel(logging.INFO)

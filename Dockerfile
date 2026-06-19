@@ -10,6 +10,3 @@ WORKDIR /app
 
 # Definir pipeline
 ENV FLEX_TEMPLATE_PYTHON_PY_FILE="/app/pipeline.py"
-
-# ENTRYPOINT oficial Beam
-ENTRYPOINT ["/opt/apache/beam/boot"]
