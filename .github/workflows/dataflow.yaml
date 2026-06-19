@@ -7,6 +7,7 @@ on:
 
 env:
   PROJECT_ID: 'omega-chimera-469104-s7'
+  CLOUDSDK_CORE_PROJECT: 'omega-chimera-469104-s7' # Forzar ID de proyecto limpio para gcloud
   REGION: 'us-central1'
   IMAGE_URI: 'us-central1-docker.pkg.dev/omega-chimera-469104-s7/dataflow-repo/dataflow-routing:latest'
   TEMPLATE_GCS_PATH: 'gs://dkft_bronze/templates/dataflow-routing.json'
@@ -45,4 +46,3 @@ jobs:
             --image="$IMAGE_URI" \
             --sdk-language="PYTHON" \
             --project="$PROJECT_ID"
-
