@@ -1,0 +1,47 @@
+name: Despliegue de Dataflow Flex Template
+
+on:
+  push:
+    branches:
+      - main  # Cambia a master si tu rama principal se llama así
+
+env:
+  PROJECT_ID: 'omega-chimera-469104-s7'
+  REGION: 'us-central1'
+  IMAGE_URI: 'us-central1-docker.pkg.dev/omega-chimera-469104-s7/dataflow-repo/dataflow-routing:latest'
+  TEMPLATE_GCS_PATH: 'gs://dkft_bronze/templates/dataflow-routing.json'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar Código
+        uses: actions/checkout@v4
+
+      - name: Autenticación Segura en GCP (OIDC)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/43424099593/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'dataflow-router-sa@://gserviceaccount.com'
+
+      - name: Configurar Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Autorizar Docker en Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Construir y Subir Imagen Docker
+        run: |
+          docker build -t $IMAGE_URI .
+          docker push $IMAGE_URI
+
+      - name: Construir Dataflow Flex Template
+        run: |
+          gcloud dataflow flex-template build $TEMPLATE_GCS_PATH \
+            --image="$IMAGE_URI" \
+            --sdk-language="PYTHON" \
+            --project="$PROJECT_ID"
