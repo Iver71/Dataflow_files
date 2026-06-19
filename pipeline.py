@@ -11,7 +11,7 @@ class RouteGCSFilesFn(beam.DoFn):
         self.quarantine_path = quarantine_path
 
     def process(self, file_metadata):
-        # 💡 IMPORTANTE: Mover los imports aquí adentro para que los workers los reconozcan
+        # Mover los imports aquí adentro para que los workers distributed los reconozcan
         import apache_beam.io.gcp.gcsio as gcsio
         import posixpath
 
@@ -24,30 +24,34 @@ class RouteGCSFilesFn(beam.DoFn):
         if not filename:
             return
 
-        # Routing logic
+        # Lógica de enrutamiento (Routing logic)
         if filename.lower().endswith(".csv"):
             target_directory = self.raw_path
         else:
             target_directory = self.quarantine_path
 
-        # Usar posixpath de forma segura dentro del worker
+        # Usar posixpath de forma segura para las rutas de GCS
         target_path = posixpath.join(target_directory, filename)
 
-        logging.info(f"Procesando {gcs_path} -> {target_path}")
+        logging.info(f"Moviendo {gcs_path} -> {target_path}")
 
         try:
-            # Leer archivo desde GCS
+            # 1. Leer archivo original desde landing
             with gcs.open(gcs_path) as src:
                 content = src.read()
 
-            # Escribir archivo destino
+            # 2. Escribir archivo en la capa de destino correspondiente
             with gcs.open(target_path, "w") as dest:
                 dest.write(content)
 
-            logging.info(f"Archivo copiado correctamente: {filename}")
+            logging.info(f"Archivo copiado correctamente a destino: {filename}")
+
+            # 3. 🔥 ELIMINACIÓN SEGURA: Borrar de landing SOLO si el paso anterior fue exitoso
+            gcs.delete(gcs_path)
+            logging.info(f"Archivo original purgado con éxito de landing: {filename}")
 
         except Exception as e:
-            logging.error(f"Error procesando {filename}: {str(e)}")
+            logging.error(f"Error procesando {filename}. Se mantendrá en landing por seguridad: {str(e)}")
 
 def run(argv=None):
     parser = argparse.ArgumentParser()
