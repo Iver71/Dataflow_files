@@ -7,7 +7,6 @@ on:
 
 env:
   PROJECT_ID: 'omega-chimera-469104-s7'
-  CLOUDSDK_CORE_PROJECT: 'omega-chimera-469104-s7' # Forzar ID de proyecto limpio para gcloud
   REGION: 'us-central1'
   IMAGE_URI: 'us-central1-docker.pkg.dev/omega-chimera-469104-s7/dataflow-repo/dataflow-routing:latest'
   TEMPLATE_GCS_PATH: 'gs://dkft_bronze/templates/dataflow-routing.json'
@@ -26,11 +25,14 @@ jobs:
       - name: Autenticación Segura en GCP (OIDC)
         uses: google-github-actions/auth@v2
         with:
+          project_id: 'omega-chimera-469104-s7' # Forzar ID de proyecto limpio aquí obligatoriamente
           workload_identity_provider: 'projects/43424099593/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
           service_account: 'dataflow-router-sa@://gserviceaccount.com'
 
       - name: Configurar Google Cloud CLI
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: 'omega-chimera-469104-s7' # Forzar ID aquí también para desinfectar gcloud
 
       - name: Autorizar Docker en Artifact Registry
         run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
@@ -45,4 +47,4 @@ jobs:
           gcloud dataflow flex-template build $TEMPLATE_GCS_PATH \
             --image="$IMAGE_URI" \
             --sdk-language="PYTHON" \
-            --project="$PROJECT_ID"
+            --project="omega-chimera-469104-s7"
