@@ -1,4 +1,4 @@
-FROM apache_beam:python3.10
+FROM apache-beam/python3.10_sdk:2.54.0
 
 # Copiar el código de la pipeline al contenedor
 COPY pipeline.py /app/pipeline.py
