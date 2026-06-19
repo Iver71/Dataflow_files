@@ -3,63 +3,72 @@ import logging
 import os
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
-from apache_beam.io import fileio
+from apache_beam.io.gcp import gcsio
+
+class RouteGCSFilesFn(beam.DoFn):
+    def __init__(self, raw_path, quarantine_path):
+        self.raw_path = raw_path
+        self.quarantine_path = quarantine_path
+
+    def process(self, element):
+        # El elemento es una ruta de archivo completa (ej. gs://dkft_bronze/landing/archivo.csv)
+        gcs_path = element
+        filename = os.path.basename(gcs_path)
+        
+        if not filename:
+            return
+
+        # Inicializar el cliente de Cloud Storage de Beam
+        google_gcs = gcsio.GcsIO()
+        
+        # Determinar la carpeta de destino según la extensión .csv
+        if filename.lower().endswith('.csv'):
+            target_directory = self.raw_path
+        else:
+            target_directory = self.quarantine_path
+            
+        target_path = os.path.join(target_directory, filename)
+        logging.info(f"Copiando archivo {filename} de landing hacia: {target_path}")
+        
+        try:
+            # Leer el archivo original desde landing
+            with google_gcs.open(gcs_path, 'r') as src:
+                content = src.read()
+            
+            # Escribir el archivo exactamente igual en su carpeta destino
+            with google_gcs.open(target_path, 'w') as dest:
+                dest.write(content)
+                
+            logging.info(f"Archivo {filename} copiado con éxito.")
+        except Exception as e:
+            logging.error(f"Error procesando el archivo {filename}: {str(e)}")
 
 def run(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        '--input_path',
-        dest='input_path',
-        required=True,
-        help='Ruta de entrada en GCS (ej. gs://dkft_bronze/landing/*)')
-    parser.add_argument(
-        '--output_raw',
-        dest='output_raw',
-        required=True,
-        help='Ruta de salida Raw en GCS (ej. gs://dkft_bronze/Raw/)')
-    parser.add_argument(
-        '--output_quarantine',
-        dest='output_quarantine',
-        required=True,
-        help='Ruta de salida Quarantine en GCS (ej. gs://dkft_bronze/quarantine/)')
+    parser.add_argument('--input_path', required=True, help='gs://dkft_bronze/landing/*')
+    parser.add_argument('--output_raw', required=True, help='gs://dkft_bronze/Raw/')
+    parser.add_argument('--output_quarantine', required=True, help='gs://dkft_bronze/quarantine/')
     
     known_args, pipeline_args = parser.parse_known_args(argv)
-    options = PipelineOptions(pipeline_args)
+    pipeline_options = PipelineOptions(pipeline_args)
+    
+    with beam.Pipeline(options=pipeline_options) as p:
+        # Usar Create con la ruta base expandida para listar los archivos reales de forma nativa
+        from apache_beam.io.filesystems import FileSystems
+        
+        # Obtener la lista física de archivos que están en la carpeta landing actualmente
+        match_result = FileSystems.match([known_args.input_path])
+        files_found = [metadata.path for metadata in match_result[0].metadata_list]
+        
+        if not files_found:
+            logging.info("No se encontraron archivos en la ruta de landing.")
+            # Si no hay archivos, inicializar una lista vacía para evitar que Dataflow falle
+            files_found = []
 
-    with beam.Pipeline(options=options) as p:
-        # 1. Leer metadatos y contenido de los archivos en landing
-        files = (
-            p 
-            | 'BuscarArchivos' >> fileio.MatchFiles(known_args.input_path)
-            | 'LeerMatches' >> fileio.ReadMatches()
-            | 'ExtraerContenido' >> beam.Map(lambda file_metadata: (file_metadata.metadata.path, file_metadata.read_utf8()))
-        )
-
-        # 2. Filtrar archivos .csv (Evaluando el índice [0] que es la ruta)
-        csv_files = (
-            files
-            | 'FiltrarCSV' >> beam.Filter(lambda file_tuple: file_tuple[0].lower().endswith('.csv'))
-            | 'ObtenerTextoCSV' >> beam.Map(lambda file_tuple: file_tuple[1])
-        )
-
-        # 3. Filtrar archivos que NO son .csv
-        non_csv_files = (
-            files
-            | 'FiltrarNoCSV' >> beam.Filter(lambda file_tuple: not file_tuple[0].lower().endswith('.csv'))
-            | 'ObtenerTextoNoCSV' >> beam.Map(lambda file_tuple: file_tuple[1])
-        )
-
-        # 4. Escribir los resultados en sus respectivos destinos
-        csv_files | 'EscribirEnRaw' >> beam.io.WriteToText(
-            os.path.join(known_args.output_raw, 'datos'),
-            file_name_suffix='.csv',
-            shard_name_template=''  # Evita que se fragmente en múltiples archivos pequeños si es batch
-        )
-
-        non_csv_files | 'EscribirEnQuarantine' >> beam.io.WriteToText(
-            os.path.join(known_args.output_quarantine, 'archivo'),
-            file_name_suffix='.txt',
-            shard_name_template=''
+        (
+            p
+            | 'InicializarLista' >> beam.Create(files_found)
+            | 'ProcesarEnrutamiento' >> beam.ParDo(RouteGCSFilesFn(known_args.output_raw, known_args.output_quarantine))
         )
 
 if __name__ == '__main__':
